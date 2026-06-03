@@ -97,7 +97,7 @@
           ref="addressInput"
           type="text"
           class="address-input"
-          :value="displayUrl"
+          v-model="addressValue"
           @keydown.enter="navigateTo"
           @focus="onAddressFocus"
           @blur="onAddressBlur"
@@ -129,7 +129,6 @@
         class="webview"
         :class="{ visible: tab.id === activeTabId }"
         allowpopups
-        disablewebsecurity
         @did-start-navigation="onNavigationStart(tab, $event)"
         @did-navigate="onNavigate(tab, $event)"
         @did-navigate-in-page="onNavigateInPage(tab, $event)"
@@ -171,15 +170,10 @@ export default {
     const tabsContainer = ref(null)
     const addressFocused = ref(false)
     const isLoading = ref(false)
+    const addressValue = ref('')
     let tabCounter = 0
 
     const currentTab = computed(() => tabs.find(t => t.id === activeTabId.value))
-
-    const displayUrl = computed(() => {
-      if (!currentTab.value) return ''
-      if (addressFocused.value) return currentTab.value.url || ''
-      return formatDisplayUrl(currentTab.value.url || '')
-    })
 
     function formatDisplayUrl(url) {
       if (!url) return ''
@@ -201,15 +195,17 @@ export default {
 
     function createTab(url) {
       tabCounter++
+      const tabUrl = url || config.newTabUrl
       const tab = reactive({
         id: `tab-${tabCounter}`,
-        url: url || config.newTabUrl,
+        url: tabUrl,
         title: '新标签页',
         favicon: null,
         loading: false
       })
       tabs.push(tab)
       activeTabId.value = tab.id
+      addressValue.value = formatDisplayUrl(tabUrl)
       return tab
     }
 
@@ -219,6 +215,10 @@ export default {
 
     function switchTab(tabId) {
       activeTabId.value = tabId
+      const tab = tabs.find(t => t.id === tabId)
+      if (tab) {
+        addressValue.value = formatDisplayUrl(tab.url || '')
+      }
       nextTick(updateNavState)
     }
 
@@ -230,13 +230,14 @@ export default {
         if (tabs.length > 0) {
           const newIndex = Math.min(index, tabs.length - 1)
           activeTabId.value = tabs[newIndex].id
+          addressValue.value = formatDisplayUrl(tabs[newIndex].url || '')
         }
       }
       nextTick(updateNavState)
     }
 
     function navigateTo(event) {
-      let url = event.target.value.trim()
+      let url = addressValue.value.trim()
       if (!url) return
       if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) {
         if (/^[\w-]+(\.[\w-]+)+/.test(url) && !url.includes(' ')) {
@@ -248,6 +249,7 @@ export default {
       const tab = currentTab.value
       if (tab) {
         tab.url = url
+        addressValue.value = url
         const wv = getWebview(tab.id)
         if (wv) wv.loadURL(url)
       }
@@ -280,6 +282,7 @@ export default {
       const tab = currentTab.value
       if (tab) {
         tab.url = config.homeUrl
+        addressValue.value = formatDisplayUrl(config.homeUrl)
         const wv = getActiveWebview()
         if (wv) wv.loadURL(config.homeUrl)
       }
@@ -312,12 +315,18 @@ export default {
     function onNavigationStart(tab, event) {
       if (event.url && event.url !== 'about:blank') {
         tab.url = event.url
+        if (tab.id === activeTabId.value && !addressFocused.value) {
+          addressValue.value = formatDisplayUrl(event.url)
+        }
       }
     }
 
     function onNavigate(tab, event) {
       if (event.url) {
         tab.url = event.url
+        if (tab.id === activeTabId.value && !addressFocused.value) {
+          addressValue.value = formatDisplayUrl(event.url)
+        }
       }
       nextTick(updateNavState)
     }
@@ -325,6 +334,9 @@ export default {
     function onNavigateInPage(tab, event) {
       if (event.url) {
         tab.url = event.url
+        if (tab.id === activeTabId.value && !addressFocused.value) {
+          addressValue.value = formatDisplayUrl(event.url)
+        }
       }
       nextTick(updateNavState)
     }
@@ -375,6 +387,9 @@ export default {
 
     function onAddressFocus(event) {
       addressFocused.value = true
+      if (currentTab.value) {
+        addressValue.value = currentTab.value.url || ''
+      }
       nextTick(() => {
         event.target.select()
       })
@@ -382,6 +397,9 @@ export default {
 
     function onAddressBlur() {
       addressFocused.value = false
+      if (currentTab.value) {
+        addressValue.value = formatDisplayUrl(currentTab.value.url || '')
+      }
     }
 
     function minimize() {
@@ -453,6 +471,7 @@ export default {
         isMaximized.value = maximized
       })
       createTab(config.newTabUrl)
+      addressValue.value = formatDisplayUrl(config.newTabUrl)
       setupKeyboardShortcuts()
     })
 
@@ -467,8 +486,8 @@ export default {
       tabsContainer,
       addressFocused,
       isLoading,
+      addressValue,
       currentTab,
-      displayUrl,
       addTab,
       switchTab,
       closeTab,
