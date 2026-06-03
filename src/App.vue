@@ -124,11 +124,11 @@
       <webview
         v-for="tab in tabs"
         :key="tab.id"
-        :src="tab.url"
         :data-tab-id="tab.id"
         class="webview"
         :class="{ visible: tab.id === activeTabId }"
         allowpopups
+        disablewebsecurity
         @did-start-navigation="onNavigationStart(tab, $event)"
         @did-navigate="onNavigate(tab, $event)"
         @did-navigate-in-page="onNavigateInPage(tab, $event)"
@@ -382,6 +382,14 @@ export default {
     }
 
     function onDomReady(tab) {
+      const wv = getWebview(tab.id)
+      if (wv) {
+        try {
+          wv.loadURL(tab.url)
+        } catch (e) {
+          console.error('loadURL failed:', e)
+        }
+      }
       nextTick(updateNavState)
     }
 
