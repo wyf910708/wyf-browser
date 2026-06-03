@@ -1,0 +1,21 @@
+{
+  "name": "wyf-browser",
+  "version": "1.0.0",
+  "description": "Chrome/Edge风格浏览器 - 基于Electron + Vue 3",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "electron:dev": "cross-env NODE_ENV=development node_modules/electron/dist/electron.exe .",
+    "build": "vite build",
+    "start": "node_modules/electron/dist/electron.exe ."
+  },
+  "dependencies": {
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "cross-env": "^7.0.3",
+    "electron": "^28.0.0",
+    "vite": "^5.0.0"
+  }
+}
