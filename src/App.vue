@@ -1,5 +1,5 @@
 <template>
-  <div class="browser" :class="[`theme-${config.theme}`]">
+  <div class="browser">
     <template v-if="config.showHeader">
       <div class="titlebar" @dblclick="toggleMaximize">
         <div class="titlebar-drag">
@@ -30,7 +30,7 @@
       </div>
 
       <div class="tab-bar" v-if="config.showTabBar">
-        <div class="tabs-container" ref="tabsContainer">
+        <div class="tabs-container">
           <div
             v-for="tab in tabs"
             :key="tab.id"
@@ -117,37 +117,9 @@
       </div>
     </div>
 
-    <div class="webview-container">
+    <div class="webview-container" ref="webviewContainer">
       <div v-if="isLoading" class="loading-bar">
         <div class="loading-progress"></div>
-      </div>
-      <webview
-        v-for="tab in tabs"
-        :key="tab.id"
-        :data-tab-id="tab.id"
-        class="webview"
-        :class="{ visible: tab.id === activeTabId }"
-        allowpopups
-        disablewebsecurity
-        @did-start-navigation="onNavigationStart(tab, $event)"
-        @did-navigate="onNavigate(tab, $event)"
-        @did-navigate-in-page="onNavigateInPage(tab, $event)"
-        @page-title-updated="onTitleUpdated(tab, $event)"
-        @page-favicon-updated="onFaviconUpdated(tab, $event)"
-        @did-start-loading="onStartLoading(tab)"
-        @did-stop-loading="onStopLoading(tab)"
-        @did-fail-load="onFailLoad(tab, $event)"
-        @new-window="onNewWindow(tab, $event)"
-        @dom-ready="onDomReady(tab)"
-      ></webview>
-      <div v-if="tabs.length === 0" class="empty-state">
-        <button class="new-tab-large" @mousedown="addTab">
-          <svg width="48" height="48" viewBox="0 0 48 48">
-            <line x1="24" y1="12" x2="24" y2="36" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-            <line x1="12" y1="24" x2="36" y2="24" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-          </svg>
-          <span>打开新标签页</span>
-        </button>
       </div>
     </div>
   </div>
@@ -167,7 +139,7 @@ export default {
     const canGoBack = ref(false)
     const canGoForward = ref(false)
     const addressInput = ref(null)
-    const tabsContainer = ref(null)
+    const webviewContainer = ref(null)
     const addressFocused = ref(false)
     const isLoading = ref(false)
     const addressValue = ref('')
@@ -193,6 +165,119 @@ export default {
       return url.startsWith('https://')
     }
 
+    function createWebview(tab) {
+      const wv = document.createElement('webview')
+      wv.setAttribute('data-tab-id', tab.id)
+      wv.className = 'webview'
+      wv.setAttribute('allowpopups', '')
+      wv.setAttribute('disablewebsecurity', '')
+      wv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;border:none;visibility:hidden;z-index:0;'
+
+      wv.addEventListener('did-start-navigation', (event) => {
+        if (event.url && event.url !== 'about:blank') {
+          tab.url = event.url
+          if (tab.id === activeTabId.value && !addressFocused.value) {
+            addressValue.value = formatDisplayUrl(event.url)
+          }
+        }
+      })
+
+      wv.addEventListener('did-navigate', (event) => {
+        if (event.url) {
+          tab.url = event.url
+          if (tab.id === activeTabId.value && !addressFocused.value) {
+            addressValue.value = formatDisplayUrl(event.url)
+          }
+        }
+        nextTick(updateNavState)
+      })
+
+      wv.addEventListener('did-navigate-in-page', (event) => {
+        if (event.url) {
+          tab.url = event.url
+          if (tab.id === activeTabId.value && !addressFocused.value) {
+            addressValue.value = formatDisplayUrl(event.url)
+          }
+        }
+        nextTick(updateNavState)
+      })
+
+      wv.addEventListener('page-title-updated', (event) => {
+        tab.title = event.title || '新标签页'
+      })
+
+      wv.addEventListener('page-favicon-updated', (event) => {
+        if (event.favicons && event.favicons.length > 0) {
+          tab.favicon = event.favicons[0]
+        }
+      })
+
+      wv.addEventListener('did-start-loading', () => {
+        tab.loading = true
+        isLoading.value = true
+      })
+
+      wv.addEventListener('did-stop-loading', () => {
+        tab.loading = false
+        isLoading.value = tabs.some(t => t.loading)
+        nextTick(updateNavState)
+      })
+
+      wv.addEventListener('did-fail-load', (event) => {
+        tab.loading = false
+        isLoading.value = tabs.some(t => t.loading)
+        if (event.errorCode !== -3) {
+          tab.title = '加载失败'
+        }
+      })
+
+      wv.addEventListener('new-window', (event) => {
+        event.preventDefault()
+        createTab(event.url)
+      })
+
+      wv.addEventListener('dom-ready', () => {
+        nextTick(updateNavState)
+      })
+
+      if (webviewContainer.value) {
+        webviewContainer.value.appendChild(wv)
+      }
+
+      return wv
+    }
+
+    function showWebview(tabId) {
+      if (!webviewContainer.value) return
+      const allWvs = webviewContainer.value.querySelectorAll('webview')
+      allWvs.forEach(wv => {
+        if (wv.getAttribute('data-tab-id') === tabId) {
+          wv.style.visibility = 'visible'
+          wv.style.zIndex = '1'
+        } else {
+          wv.style.visibility = 'hidden'
+          wv.style.zIndex = '0'
+        }
+      })
+    }
+
+    function removeWebview(tabId) {
+      if (!webviewContainer.value) return
+      const wv = webviewContainer.value.querySelector(`webview[data-tab-id="${tabId}"]`)
+      if (wv) {
+        try { wv.remove() } catch {}
+      }
+    }
+
+    function getWebview(tabId) {
+      if (!webviewContainer.value) return null
+      return webviewContainer.value.querySelector(`webview[data-tab-id="${tabId}"]`)
+    }
+
+    function getActiveWebview() {
+      return getWebview(activeTabId.value)
+    }
+
     function createTab(url) {
       tabCounter++
       const tabUrl = url || config.newTabUrl
@@ -206,6 +291,13 @@ export default {
       tabs.push(tab)
       activeTabId.value = tab.id
       addressValue.value = formatDisplayUrl(tabUrl)
+
+      nextTick(() => {
+        const wv = createWebview(tab)
+        showWebview(tab.id)
+        wv.src = tabUrl
+      })
+
       return tab
     }
 
@@ -219,18 +311,21 @@ export default {
       if (tab) {
         addressValue.value = formatDisplayUrl(tab.url || '')
       }
+      showWebview(tabId)
       nextTick(updateNavState)
     }
 
     function closeTab(tabId) {
       const index = tabs.findIndex(t => t.id === tabId)
       if (index === -1) return
+      removeWebview(tabId)
       tabs.splice(index, 1)
       if (activeTabId.value === tabId) {
         if (tabs.length > 0) {
           const newIndex = Math.min(index, tabs.length - 1)
           activeTabId.value = tabs[newIndex].id
           addressValue.value = formatDisplayUrl(tabs[newIndex].url || '')
+          showWebview(tabs[newIndex].id)
         }
       }
       nextTick(updateNavState)
@@ -251,7 +346,9 @@ export default {
         tab.url = url
         addressValue.value = url
         const wv = getWebview(tab.id)
-        if (wv) wv.loadURL(url)
+        if (wv) {
+          wv.src = url
+        }
       }
       event.target.blur()
     }
@@ -284,16 +381,8 @@ export default {
         tab.url = config.homeUrl
         addressValue.value = formatDisplayUrl(config.homeUrl)
         const wv = getActiveWebview()
-        if (wv) wv.loadURL(config.homeUrl)
+        if (wv) wv.src = config.homeUrl
       }
-    }
-
-    function getWebview(tabId) {
-      return document.querySelector(`webview[data-tab-id="${tabId}"]`)
-    }
-
-    function getActiveWebview() {
-      return getWebview(activeTabId.value)
     }
 
     function updateNavState() {
@@ -310,87 +399,6 @@ export default {
         canGoBack.value = false
         canGoForward.value = false
       }
-    }
-
-    function onNavigationStart(tab, event) {
-      if (event.url && event.url !== 'about:blank') {
-        tab.url = event.url
-        if (tab.id === activeTabId.value && !addressFocused.value) {
-          addressValue.value = formatDisplayUrl(event.url)
-        }
-      }
-    }
-
-    function onNavigate(tab, event) {
-      if (event.url) {
-        tab.url = event.url
-        if (tab.id === activeTabId.value && !addressFocused.value) {
-          addressValue.value = formatDisplayUrl(event.url)
-        }
-      }
-      nextTick(updateNavState)
-    }
-
-    function onNavigateInPage(tab, event) {
-      if (event.url) {
-        tab.url = event.url
-        if (tab.id === activeTabId.value && !addressFocused.value) {
-          addressValue.value = formatDisplayUrl(event.url)
-        }
-      }
-      nextTick(updateNavState)
-    }
-
-    function onTitleUpdated(tab, event) {
-      tab.title = event.title || '新标签页'
-    }
-
-    function onFaviconUpdated(tab, event) {
-      if (event.favicons && event.favicons.length > 0) {
-        tab.favicon = event.favicons[0]
-      }
-    }
-
-    function onStartLoading(tab) {
-      tab.loading = true
-      isLoading.value = true
-    }
-
-    function onStopLoading(tab) {
-      tab.loading = false
-      isLoading.value = tabs.some(t => t.loading)
-      nextTick(updateNavState)
-    }
-
-    function onFailLoad(tab, event) {
-      tab.loading = false
-      isLoading.value = tabs.some(t => t.loading)
-      if (event.errorCode !== -3) {
-        tab.title = '加载失败'
-      }
-    }
-
-    function onNewWindow(tab, event) {
-      event.preventDefault()
-      const newTab = createTab(event.url)
-      nextTick(() => {
-        const wv = getWebview(newTab.id)
-        if (wv) {
-          try { wv.loadURL(event.url) } catch {}
-        }
-      })
-    }
-
-    function onDomReady(tab) {
-      const wv = getWebview(tab.id)
-      if (wv) {
-        try {
-          wv.loadURL(tab.url)
-        } catch (e) {
-          console.error('loadURL failed:', e)
-        }
-      }
-      nextTick(updateNavState)
     }
 
     function onAddressFocus(event) {
@@ -479,7 +487,6 @@ export default {
         isMaximized.value = maximized
       })
       createTab(config.newTabUrl)
-      addressValue.value = formatDisplayUrl(config.newTabUrl)
       setupKeyboardShortcuts()
     })
 
@@ -491,7 +498,7 @@ export default {
       canGoBack,
       canGoForward,
       addressInput,
-      tabsContainer,
+      webviewContainer,
       addressFocused,
       isLoading,
       addressValue,
@@ -508,16 +515,6 @@ export default {
       toggleMaximize,
       closeWindow,
       isSecureUrl,
-      onNavigationStart,
-      onNavigate,
-      onNavigateInPage,
-      onTitleUpdated,
-      onFaviconUpdated,
-      onStartLoading,
-      onStopLoading,
-      onFailLoad,
-      onNewWindow,
-      onDomReady,
       onAddressFocus,
       onAddressBlur
     }
@@ -583,14 +580,8 @@ body {
   height: 100%;
 }
 
-.browser-logo img {
-  width: 16px;
-  height: 16px;
-}
-
-.logo-icon {
-  flex-shrink: 0;
-}
+.browser-logo img { width: 16px; height: 16px; }
+.logo-icon { flex-shrink: 0; }
 
 .browser-title {
   font-size: 12px;
@@ -824,6 +815,7 @@ body {
   z-index: 10;
   overflow: hidden;
   background: transparent;
+  pointer-events: none;
 }
 
 .loading-progress {
@@ -838,54 +830,5 @@ body {
   0% { transform: translateX(-100%); width: 30%; }
   50% { width: 60%; }
   100% { transform: translateX(400%); width: 30%; }
-}
-
-.webview {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  border: none;
-  visibility: hidden;
-  z-index: 0;
-}
-
-.webview.visible {
-  visibility: visible;
-  z-index: 1;
-}
-
-.empty-state {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-secondary);
-}
-
-.new-tab-large {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 32px;
-  border: 2px dashed var(--border-color);
-  border-radius: 16px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.new-tab-large:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(74, 158, 255, 0.05);
 }
 </style>
